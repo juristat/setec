@@ -1,0 +1,21 @@
+{
+  "name": "setec",
+  "version": "1.0.0",
+  "engines": {
+    "node": ">=6"
+  },
+  "main": "index.js",
+  "bin": {
+    "setec": "./bin/setec.js"
+  },
+  "pre-commit": [
+    "check"
+  ],
+  "author": "Robert Ward <robert@rtward.com>",
+  "private": true,
+  "dependencies": {
+    "aws-sdk": "^2.6.11",
+    "bluebird": "^3.4.6",
+    "lodash": "^4.16.4"
+  }
+}
