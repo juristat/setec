@@ -40,14 +40,17 @@ Will throw an error if the secret does not exist.
 setec get <key>
 ```
 
-In Your Project
+### In Your Project
+I reccomend only setting secrets from the command line, and using the javascript client specifically to retrieve them at runtime.
 ```javascript
 const Setec = require('setec');
 
 const secrets = new Setec({
     "s3-bucket": "my-bucket",
     "s3-prefix": "my-prefix"
-}); secrets.get('database-password').then(dbPassword => {
+});
+
+secrets.get('database-password').then(dbPassword => {
     const db = new Database("user-not-a-secret", dbPassword);
 });
 ```
