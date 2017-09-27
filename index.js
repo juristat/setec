@@ -31,7 +31,7 @@ module.exports = class Setec {
 				else resolve(resp.Contents.map(o => {
 					return o.Key.replace(new RegExp('^' + this.s3Prefix + '/'), '');
 				}));
-			});	
+			});
 		});
 	}
 
@@ -43,6 +43,11 @@ module.exports = class Setec {
 				Bucket: this.s3Bucket,
 				Key:    this.getSecretObjectKey(secret),
 			}, (err, resp) => {
+				console.dir({
+					setecSecretGetError: {
+						err, secret
+					}
+				}, { depth: null });
 				if (err) reject(err);
 				else     resolve(resp.Body);
 			});
