@@ -43,13 +43,17 @@ module.exports = class Setec {
 				Bucket: this.s3Bucket,
 				Key:    this.getSecretObjectKey(secret),
 			}, (err, resp) => {
-				console.dir({
-					setecSecretGetError: {
-						err, secret
-					}
-				}, { depth: null });
-				if (err) reject(err);
-				else     resolve(resp.Body);
+				if (err) {
+					console.dir({
+						setecSecretGetError: {
+							err, secret,
+							key: this.getSecretObjectKey(secret),
+						}
+					}, { depth: null });
+					reject(err);
+				} else {
+					resolve(resp.Body);
+				}
 			});
 		}))
 		.then(object => new Promise((resolve, reject) => {
