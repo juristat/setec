@@ -8,11 +8,11 @@
   "author": "Robert Ward <robert@rtward.com>",
   "license": "Apache-2.0",
   "scripts": {
+    "test": "jest",
     "lint": "eslint index.js",
     "lint:fix": "eslint --fix index.js"
   },
   "dependencies": {
-    "aws-sdk": "^2.383.0",
     "lodash": "^4.16.4"
   },
   "peerDependencies": {
@@ -21,6 +21,7 @@
   "devDependencies": {
     "eslint": "^5.10.0",
     "eslint-config-airbnb-base": "^13.1.0",
-    "eslint-plugin-import": "^2.14.0"
+    "eslint-plugin-import": "^2.14.0",
+    "jest": "^23.6.0"
   }
 }

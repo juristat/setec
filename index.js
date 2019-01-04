@@ -7,7 +7,7 @@ class Setec {
     this.config = Setec.getConfig(configOrConfigfile);
 
     this.awsConfig = this.config.aws || {};
-    AWS.config.update(this.awsConfig);
+    AWS.config.update(_.omit(this.awsConfig, 'role'));
 
     this.setecConfig = this.config.setec || {};
 
@@ -51,6 +51,10 @@ class Setec {
   }
 
   async loadSecrets(awsConfig, setecConfig, config) {
+    if (_.isArray(config)) {
+      return Promise.all(config.map(value => this.loadSecrets(awsConfig, setecConfig, value)));
+    }
+
     if (_.isObject(config)) {
       if (_.has(config, 'secret') && Object.keys(config).length === 1) {
         return this.loadSecret(awsConfig, setecConfig, config.secret);
@@ -67,10 +71,6 @@ class Setec {
           (acc, [key, val]) => Object.assign(acc, { [key]: val }),
           {},
         ));
-    }
-
-    if (_.isArray(config)) {
-      return Promise.all(config.map(value => this.loadSecrets(awsConfig, setecConfig, value)));
     }
 
     return config;
@@ -128,7 +128,7 @@ class Setec {
     if (this.awsConfig.role) {
       if (this.config.production) {
         throw new Error(
-          'programmatically assuming roles should only be used in non-production environments',
+          'will not assume a role in a production config',
         );
       }
 
