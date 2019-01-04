@@ -16,10 +16,10 @@ class Setec {
     /* eslint-enable no-console */
   }
 
-  async loadSecret(awsConfig, setecConfig, secretName) {
-    const ssm = new AWS.SSM(awsConfig);
+  async loadSecret(secretName) {
+    const ssm = new AWS.SSM(this.awsConfig);
 
-    const prefix = _.get(setecConfig, 'prefix', '');
+    const prefix = _.get(this.setecConfig, 'prefix', '');
     const fullSecretName = `${prefix}${secretName}`;
 
     try {
@@ -41,19 +41,19 @@ class Setec {
     }
   }
 
-  async loadSecrets(awsConfig, setecConfig, config) {
+  async loadSecrets(config) {
     if (_.isArray(config)) {
-      return Promise.all(config.map(value => this.loadSecrets(awsConfig, setecConfig, value)));
+      return Promise.all(config.map(value => this.loadSecrets(value)));
     }
 
     if (_.isObject(config)) {
       if (_.has(config, 'secret') && Object.keys(config).length === 1) {
-        return this.loadSecret(awsConfig, setecConfig, config.secret);
+        return this.loadSecret(config.secret);
       }
 
       const keyValPromises = Object.keys(config).map(async key => [
         key,
-        await this.loadSecrets(awsConfig, setecConfig, config[key]),
+        await this.loadSecrets(config[key]),
       ]);
 
       return Promise
@@ -75,6 +75,7 @@ class Setec {
 
       if (!hasExt) throw new Error(`config file "${configFile}" has no extension`);
       else if (ext === 'json') return JSON.parse(fs.readFileSync(configFile));
+      // eslint-disable-next-line global-require, import/no-dynamic-require
       else if (ext === 'js') return require(configFile);
       else throw new Error(`config file "${configFile}" has unknown extension "${ext}"`);
     }
@@ -96,9 +97,7 @@ class Setec {
           DurationSeconds: 3600,
         },
         (err, assumeResult) => {
-          if (err) {
-            reject(new Error(`unable to assume role "${role}": ${err.message}`));
-          }
+          if (err) reject(new Error(`unable to assume role "${role}": ${err.message}`));
           else resolve(assumeResult);
         },
       ),
@@ -126,7 +125,7 @@ class Setec {
       await this.assumeRole(this.awsConfig);
     }
 
-    const resolvedConfig = await this.loadSecrets(this.awsConfig, this.setecConfig, this.config);
+    const resolvedConfig = await this.loadSecrets(this.config);
     Object.assign(this.config, resolvedConfig);
     this.loaded = true;
 

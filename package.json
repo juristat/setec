@@ -5,12 +5,13 @@
     "node": ">=8"
   },
   "main": "index.js",
-  "author": "Robert Ward <robert@rtward.com>",
+  "author": "Robert Ward <robert@juristat.com>",
   "license": "Apache-2.0",
   "scripts": {
     "test": "jest",
     "lint": "eslint index.js",
-    "lint:fix": "eslint --fix index.js"
+    "lint:fix": "eslint --fix index.js",
+    "check": "npm run lint && npm run test"
   },
   "dependencies": {
     "lodash": "^4.16.4"
@@ -19,13 +20,14 @@
     "aws-sdk": "2.x"
   },
   "devDependencies": {
+    "aws-sdk": "2.x",
     "eslint": "^5.10.0",
     "eslint-config-airbnb-base": "^13.1.0",
     "eslint-plugin-import": "^2.14.0",
+    "eslint-plugin-jest": "^22.1.2",
     "jest": "^23.6.0"
   },
   "jest": {
     "collectCoverage": true
   }
-
 }
