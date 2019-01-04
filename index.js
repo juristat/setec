@@ -37,16 +37,7 @@ class Setec {
 
       return secretValue;
     } catch (error) {
-      this.logger(`error resolving secret: ${fullSecretName}`);
-      this.logger(JSON.stringify({
-        message: error.message,
-        stack: error.stack,
-      }));
-
-      process.exit(1);
-
-      // This is just to avoid a linter error
-      return null;
+      throw new Error(`error resolving secret "${fullSecretName}": ${error.message}`);
     }
   }
 
@@ -82,12 +73,10 @@ class Setec {
       const ext = configFile.split('.').pop();
       const hasExt = /\/[^/]+\.[^.]+$/.test(configFile);
 
-      /* eslint-disable global-require, import/no-dynamic-require */
-      if (!hasExt) throw new Error("Don't know what to do with a configFile with no extension");
+      if (!hasExt) throw new Error(`config file "${configFile}" has no extension`);
       else if (ext === 'json') return JSON.parse(fs.readFileSync(configFile));
       else if (ext === 'js') return require(configFile);
-      else throw new Error(`Don't know what to do with a configFile ending in .${ext}`);
-      /* eslint-enable global-require, import/no-dynamic-require */
+      else throw new Error(`config file "${configFile}" has unknown extension "${ext}"`);
     }
 
     if (_.isObject(configOrConfigfile)) return configOrConfigfile;
@@ -107,7 +96,9 @@ class Setec {
           DurationSeconds: 3600,
         },
         (err, assumeResult) => {
-          if (err) reject(err);
+          if (err) {
+            reject(new Error(`unable to assume role "${role}": ${err.message}`));
+          }
           else resolve(assumeResult);
         },
       ),

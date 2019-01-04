@@ -21,7 +21,6 @@ jest.mock('aws-sdk', () => {
 });
 
 const mockAws = require('aws-sdk');
-
 const noSecretsInput = {
   key: 'value',
   object: { key: 'value' },
@@ -66,6 +65,18 @@ test('should load from JSON file', async () => {
   expect(mockAws.config.update.mock.calls[0][0]).toEqual({});
 });
 
+test('should throw an error on a load from file with no extension', async () => {
+  expect(() => new Setec('./test-config')).toThrow(/no extension/);
+});
+
+test('should throw an error on a load from unknown file type', async () => {
+  expect(() => new Setec('./test-config.foo')).toThrow(/unknown extension/);
+});
+
+test('should throw an error on invalid input', async () => {
+  expect(() => new Setec()).toThrow(/Invalid config/);
+});
+
 test('should set AWS config from imported config', async () => {
   const conf = new Setec({
     aws: { test: 1 },
@@ -107,6 +118,13 @@ test('should assume an AWS role from the config', async () => {
   });
 });
 
+test('should assume a failed assume role', async () => {
+  mockAws.mockSTS.assumeRole.mockImplementation((input, cb) => cb(new Error('bad stuff')));
+
+  const conf = new Setec({ aws: { test: 1, role: 'roleName' } });
+  await expect(conf.load()).rejects.toThrow(/unable to assume role.*bad stuff/);
+});
+
 test('should refuse to assume a role in production', async () => {
   const conf = new Setec({
     production: true,
@@ -139,4 +157,16 @@ test('should load secrets', async () => {
   expect(conf.exportable().topLevel).toBe('topLevel-secret');
   expect(conf.exportable().object.nested).toBe('nested-secret');
   expect(conf.exportable().array[0]).toBe('array-secret');
+
+  // Testing to ensure that the load function only loads secrets the first time
+  await conf.load();
+  expect(mockAws.mockSSM.getParameter.mock.calls.length).toBe(3);
+});
+
+test('should throw an error on a faild secret loading', async () => {
+  mockAws.mockSSM.getParameter.mockImplementation((input, cb) => { cb(new Error('bad stuff')); });
+
+  const conf = new Setec({ topLevel: { secret: 'topLevel-secret' } });
+
+  await expect(conf.load()).rejects.toThrow(/error resolving secret.*bad stuff/);
 });
