@@ -1,4 +1,3 @@
-const Promise = require('bluebird');
 const AWS = require('aws-sdk');
 const _ = require('lodash');
 const fs = require('fs');
@@ -24,8 +23,14 @@ class Setec {
     const fullSecretName = `${prefix}${secretName}`;
 
     try {
-      const secretObject = await Promise.fromCallback(
-        cb => ssm.getParameter({ Name: fullSecretName, WithDecryption: true }, cb),
+      const secretObject = await new Promise(
+        (resolve, reject) => ssm.getParameter(
+          { Name: fullSecretName, WithDecryption: true },
+          (err, result) => {
+            if (err) reject(err);
+            else resolve(result);
+          },
+        ),
       );
 
       const secretValue = secretObject.Parameter.Value;
@@ -45,19 +50,27 @@ class Setec {
     }
   }
 
-  loadSecrets(awsConfig, setecConfig, config) {
+  async loadSecrets(awsConfig, setecConfig, config) {
     if (_.isObject(config)) {
       if (_.has(config, 'secret') && Object.keys(config).length === 1) {
         return this.loadSecret(awsConfig, setecConfig, config.secret);
       }
 
-      return Promise.props(
-        _.mapValues(config, value => this.loadSecrets(awsConfig, setecConfig, value)),
-      );
+      const keyValPromises = Object.keys(config).map(async key => [
+        key,
+        await this.loadSecrets(awsConfig, setecConfig, config[key]),
+      ]);
+
+      return Promise
+        .all(keyValPromises)
+        .then(keyVals => keyVals.reduce(
+          (acc, [key, val]) => Object.assign(acc, { [key]: val }),
+          {},
+        ));
     }
 
     if (_.isArray(config)) {
-      return Promise.map(config, value => this.loadSecrets(awsConfig, setecConfig, value));
+      return Promise.all(config.map(value => this.loadSecrets(awsConfig, setecConfig, value)));
     }
 
     return config;
@@ -86,12 +99,18 @@ class Setec {
     this.logger(`assuming role ${role}`);
 
     const sts = new AWS.STS();
-    const result = await Promise.fromCallback(
-      cb => sts.assumeRole({
-        RoleArn: role,
-        RoleSessionName: 'local-developer',
-        DurationSeconds: 3600,
-      }, cb),
+    const result = await new Promise(
+      (resolve, reject) => sts.assumeRole(
+        {
+          RoleArn: role,
+          RoleSessionName: 'local-developer',
+          DurationSeconds: 3600,
+        },
+        (err, assumeResult) => {
+          if (err) reject(err);
+          else resolve(assumeResult);
+        },
+      ),
     );
 
     AWS.config.update({

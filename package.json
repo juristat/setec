@@ -12,9 +12,11 @@
     "lint:fix": "eslint --fix index.js"
   },
   "dependencies": {
-    "aws-sdk": "^2.6.11",
-    "bluebird": "^3.4.6",
+    "aws-sdk": "^2.383.0",
     "lodash": "^4.16.4"
+  },
+  "peerDependencies": {
+    "aws-sdk": "2.x"
   },
   "devDependencies": {
     "eslint": "^5.10.0",
