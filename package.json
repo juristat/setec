@@ -1,18 +1,38 @@
 {
   "name": "setec",
-  "version": "1.0.3",
+  "version": "2.0.0",
   "engines": {
-    "node": ">=6"
+    "node": ">=8"
   },
   "main": "index.js",
-  "bin": {
-    "setec": "./bin/setec.js"
-  },
-  "author": "Robert Ward <robert@rtward.com>",
+  "author": "Robert Ward <robert@juristat.com>",
   "license": "Apache-2.0",
+  "repository": "git@github.com:juristat/setec.git",
+  "scripts": {
+    "test": "jest",
+    "lint": "eslint index.js",
+    "lint:fix": "eslint --fix index.js",
+    "check": "npm run lint && npm run test"
+  },
+  "pre-commit": [
+    "check"
+  ],
   "dependencies": {
-    "aws-sdk": "^2.6.11",
-    "bluebird": "^3.4.6",
     "lodash": "^4.16.4"
+  },
+  "peerDependencies": {
+    "aws-sdk": "2.x"
+  },
+  "devDependencies": {
+    "aws-sdk": "2.x",
+    "eslint": "^5.10.0",
+    "eslint-config-airbnb-base": "^13.1.0",
+    "eslint-plugin-import": "^2.14.0",
+    "eslint-plugin-jest": "^22.1.2",
+    "jest": "^23.6.0",
+    "pre-commit": "^1.2.2"
+  },
+  "jest": {
+    "collectCoverage": true
   }
 }

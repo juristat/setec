@@ -1,227 +1,141 @@
-const AWS     = require('aws-sdk');
-const Promise = require('bluebird');
-const _       = require('lodash');
+const AWS = require('aws-sdk');
+const _ = require('lodash');
+const fs = require('fs');
 
-module.exports = class Setec {
-	constructor(opts) {
-		this.s3Bucket = opts['s3-bucket'];
-		this.s3Prefix = opts['s3-prefix'];
+class Setec {
+  constructor(configOrConfigfile) {
+    this.config = Setec.getConfig(configOrConfigfile);
 
-		if (!_.isString(this.s3Bucket)) throw new Error('invalid S3 bucket');
-		if (!_.isString(this.s3Prefix)) throw new Error('invalid S3 prefix');
+    this.awsConfig = this.config.aws || {};
+    AWS.config.update(_.omit(this.awsConfig, 'role'));
 
-		const managingUsersList = opts['managing-users'];
+    this.setecConfig = this.config.setec || {};
 
-		this.managingUsers = managingUsersList ? managingUsersList.split(',') : [];
+    /* eslint-disable no-console */
+    this.logger = this.config.logger || console.log;
+    /* eslint-enable no-console */
+  }
 
-		this.s3  = new AWS.S3();
-		this.kms = new AWS.KMS();
-		this.sts = new AWS.STS();
-		this.iam = new AWS.IAM();
-	}
+  async loadSecret(secretName) {
+    const ssm = new AWS.SSM(this.awsConfig);
 
-	// Returns an array of strings representing all the secrets available.
-	list() {
-		return new Promise((resolve, reject) => {
-			this.s3.listObjects({
-				Bucket: this.s3Bucket,
-				Prefix: this.s3Prefix,
-			}, (err, resp) => {
-				if (err) reject(err);
-				else resolve(resp.Contents.map(o => {
-					return o.Key.replace(new RegExp('^' + this.s3Prefix + '/'), '');
-				}));
-			});
-		});
-	}
+    const prefix = _.get(this.setecConfig, 'prefix', '');
+    const fullSecretName = `${prefix}${secretName}`;
 
-	// Takes the name of a secret, and if the user has permission, returns the plain text value.
-	get(secret) {
-		return Promise.resolve()
-		.then(() => new Promise((resolve, reject) => {
-			this.s3.getObject({
-				Bucket: this.s3Bucket,
-				Key:    this.getSecretObjectKey(secret),
-			}, (err, resp) => {
-				if (err) {
-					console.dir({
-						setecSecretGetError: {
-							err, secret,
-							key: this.getSecretObjectKey(secret),
-						}
-					}, { depth: null });
-					reject(err);
-				} else {
-					resolve(resp.Body);
-				}
-			});
-		}))
-		.then(object => new Promise((resolve, reject) => {
-			this.kms.decrypt({ CiphertextBlob: object }, (err, resp) => {
-				if (err) reject(err);
-				else     resolve(resp.Plaintext.toString('utf-8'));
-			});
-		}));
-	}
+    try {
+      const secretObject = await new Promise(
+        (resolve, reject) => ssm.getParameter(
+          { Name: fullSecretName, WithDecryption: true },
+          (err, result) => {
+            if (err) reject(err);
+            else resolve(result);
+          },
+        ),
+      );
 
-	// Takes the name of a secret and the desired value.  If the secret exists, it updates the
-	// value.  If the secret doesn't exist, it creates a key specifically for the secret and a
-	// policy to allow users / roles to access the secret, then puts the secret value into S3.
-	set(secret, value) {
-		return Promise.resolve()
-		.then(() => this.createOrGetSecretKey(secret))
-		.then(key => new Promise((resolve, reject) => {
-			this.kms.encrypt({
-				KeyId:     key,
-				Plaintext: value,
-			}, (err, resp) => {
-				if (err) reject(err);
-				else     resolve(resp.CiphertextBlob);
-			});
-		}))
-		.then(encryptedValue => new Promise((resolve, reject) => {
-			this.s3.putObject({
-				Bucket: this.s3Bucket,
-				Key:    this.getSecretObjectKey(secret),
-				Body:   encryptedValue,
-			}, (err, resp) => {
-				if (err) reject(err);
-				else     resolve();
-			});
-		}));
-	}
+      const secretValue = secretObject.Parameter.Value;
 
-	getSecretKeyName(secret)   { return `Setec-Secret-Key-${secret}`.replace(/[^a-zA-Z0-9:/_-]/g, '_') }
-	getSecretObjectKey(secret) { return `${this.s3Prefix}/Setec-Secret-${secret}`                      }
+      return secretValue;
+    } catch (error) {
+      throw new Error(`error resolving secret "${fullSecretName}": ${error.message}`);
+    }
+  }
 
-	getSecretKey(secret) {
-		return new Promise((resolve, reject) => {
-			this.kms.describeKey({ KeyId: 'alias/' + this.getSecretKeyName(secret) }, (err, resp) => {
-				if (err) reject(err);
-				else     resolve(resp.KeyMetadata.Arn);
-			});
-		});
-	}
+  async loadSecrets(config) {
+    if (_.isArray(config)) {
+      return Promise.all(config.map(value => this.loadSecrets(value)));
+    }
 
-	getCurrentUser() {
-		return new Promise((resolve, reject) => {
-			this.sts.getCallerIdentity({}, (err, resp) => {
-				if (err) reject(err);
-				else     resolve(resp.Arn);
-			})
-		});
-	}
+    if (_.isObject(config)) {
+      if (_.has(config, 'secret') && Object.keys(config).length === 1) {
+        return this.loadSecret(config.secret);
+      }
 
-	getRootUser() {
-		return new Promise((resolve, reject) => {
-			this.sts.getCallerIdentity({}, (err, resp) => {
-				if (err) reject(err);
-				else     resolve(`arn:aws:iam::${resp.Account}:root`);
-			})
-		});
-	}
+      const keyValPromises = Object.keys(config).map(async key => [
+        key,
+        await this.loadSecrets(config[key]),
+      ]);
 
-	getManagingUsers() {
-		return Promise.all([
-			this.getRootUser(),
-			this.getCurrentUser(),
-			this.managingUsers
-		])
-		.then(_.flatten);
-	}
+      return Promise
+        .all(keyValPromises)
+        .then(keyVals => keyVals.reduce(
+          (acc, [key, val]) => Object.assign(acc, { [key]: val }),
+          {},
+        ));
+    }
 
-	getNewKeyPolicy() {
-		return Promise.resolve()
-		.then(() => this.getManagingUsers())
-		.then(users => ({
-			Version:   '2012-10-17',
-			Id:        'Setec-Secret-Policy',
-			Statement: [{
-				Sid:       'Allow management by users',
-				Effect:    'Allow',
-				Principal: { AWS: users },
-				Action:    'kms:*',
-				Resource:  '*',
-			}],
-		}))
-		.then(JSON.stringify);
-	}
+    return config;
+  }
 
-	createSecretKey(secret) {
-		return Promise.resolve()
-		.then(() => this.getNewKeyPolicy())
-		.then(policy => new Promise((resolve, reject) => {
-			const opts = {
-				Description: this.getSecretKeyName(secret),
-				KeyUsage:    'ENCRYPT_DECRYPT',
-				Origin:      'AWS_KMS',
-				Policy:      policy,
-			};
+  static getConfig(configOrConfigfile) {
+    if (_.isString(configOrConfigfile)) {
+      const configFile = configOrConfigfile;
+      const ext = configFile.split('.').pop();
+      const hasExt = /\/[^/]+\.[^.]+$/.test(configFile);
 
-			this.kms.createKey(opts, (err, resp) => {
-				if (err) reject(err);
-				else     resolve(resp.KeyMetadata.Arn);
-			});
-		}))
-		.tap(keyId => new Promise((resolve, reject) => {
-			this.kms.createAlias(
-				{
-					AliasName:   'alias/' + this.getSecretKeyName(secret),
-					TargetKeyId: keyId
-				},
-				(err, resp) => {
-					if (err) reject(err);
-					else     resolve();
-				}
-			);
-		}))
-		.tap(keyId => new Promise((resolve, reject) => {
-			const policy = {
-				Version:   '2012-10-17',
-				Statement: [
-					{
-						Effect: 'Allow',
-						Action: [
-							'kms:Encrypt',          'kms:Decrypt',     'kms:ReEncrypt*',
-							'kms:GenerateDataKey*', 'kms:DescribeKey',
-						],
-						Resource: [ keyId ],
-					},
-					{
-						Effect:   'Allow',
-						Action:   [ 's3:*' ],
-						Resource: [ `arn:aws:s3:::${this.s3Bucket}/${this.getSecretObjectKey(secret)}` ],
-					},
-				]
-			};
+      if (!hasExt) throw new Error(`config file "${configFile}" has no extension`);
+      else if (ext === 'json') return JSON.parse(fs.readFileSync(configFile));
+      // eslint-disable-next-line global-require, import/no-dynamic-require
+      else if (ext === 'js') return require(configFile);
+      else throw new Error(`config file "${configFile}" has unknown extension "${ext}"`);
+    }
 
-			const cleanedSecretName = secret.replace(/[^0-9a-z]/ig, '-');
+    if (_.isObject(configOrConfigfile)) return configOrConfigfile;
 
-			this.iam.createPolicy(
-				{
-					PolicyDocument: JSON.stringify(policy),
-					PolicyName:     `Setec-Secret-${cleanedSecretName}-Read-Write`,
-					Description:    `Setec-Secret-${cleanedSecretName}-Read-Write`,
-				},
-				(err, resp) => {
-					if (err) reject(err);
-					else     resolve();
-				}
-			);
-		}));
-	}
+    throw new Error('Invalid config, must be either a string filename or object');
+  }
 
-	createOrGetSecretKey(secret) {
-		return Promise.resolve()
-		.then(() => this.getSecretKey(secret))
-		.catch((err) => {
-			if (/not found/.test(err.message)) {
-				console.error(`secret key ${this.getSecretKeyName(secret)} not found, creating`);
+  async assumeRole({ role }) {
+    this.logger(`assuming role ${role}`);
 
-				return this.createSecretKey(secret);
-			}
+    const sts = new AWS.STS();
+    const result = await new Promise(
+      (resolve, reject) => sts.assumeRole(
+        {
+          RoleArn: role,
+          RoleSessionName: 'local-developer',
+          DurationSeconds: 3600,
+        },
+        (err, assumeResult) => {
+          if (err) reject(new Error(`unable to assume role "${role}": ${err.message}`));
+          else resolve(assumeResult);
+        },
+      ),
+    );
 
-			throw err;
-		});
-	}
-};
+    AWS.config.update({
+      accessKeyId: result.Credentials.AccessKeyId,
+      secretAccessKey: result.Credentials.SecretAccessKey,
+      sessionToken: result.Credentials.SessionToken,
+    });
+
+    this.logger(`assumed role ${role}`);
+  }
+
+  async load() {
+    if (this.loaded) return this.config;
+
+    if (this.awsConfig.role) {
+      if (this.config.production) {
+        throw new Error(
+          'will not assume a role in a production config',
+        );
+      }
+
+      await this.assumeRole(this.awsConfig);
+    }
+
+    const resolvedConfig = await this.loadSecrets(this.config);
+    Object.assign(this.config, resolvedConfig);
+    this.loaded = true;
+
+    return this.config;
+  }
+
+  exportable() {
+    this.config.load = this.load.bind(this);
+    return this.config;
+  }
+}
+
+module.exports = Setec;
